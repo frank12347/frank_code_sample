@@ -1,0 +1,275 @@
+---
+title: "CS544 project"
+output:
+  html_document:
+    fig_width: 8
+    code_folding: show
+    highlight: tango
+    toc: true
+    toc_float: 
+      collapsed: True
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=8, fig.height=4)
+library(tidyverse)
+library(sampling)
+options(digits = 4)
+```
+
+# 1. Introduction
+
+1.	Dataset US mass shootings dataset from 1966-2019 (partial) 
+
+2.	Size: 339 rows and 24 columns
+3.	Columns:  
+
+4.	Source: https://www.kaggle.com/myho63/us-mass-shooting-1966-2019?select=US+Mass+Shooting+1966-2019+%28cleaned%29.csv
+
+5.	Description:
+
+This data covers raw data of mass shooting cases in US from 1966-2019. In fact, it does not cover all cases but it gives analyst/ viewer a general viewpoint of gun violence situation in US. I want to find some connections among those cases and certain conditions what causes mass shooting, either classification or prediction. 
+
+6.	Goal:
+
+Do some analysis to find pattern of US mass shooting cases. 
+
+Do all tasks required in the project requirements. 
+
+
+# 2. Preprocessing data
+
+1. Read mass_shooting dataset and replace -999 to NA
+2. Fix column names which are not well-formated
+3. Sort the data by date and remove date input error.
+
+```{r}
+
+df <- read_csv('mass_shooting.csv', na = c(-999, "NA") )
+# check column names and remove unneeded ones
+# fix Date
+df <- df %>% rename(
+  Incideent_are = `Incident Area`,
+  Location_type = `Open/Close Location`,
+  Shooter_status = `Shooter status`,
+  Shooter_number = `No. of shooter/suspect`,
+  Total_vicitimes = `Total victims`,
+  Policeman_killed = `Policeman Killed`,
+  Suspect_age = Age,
+  Employeed = `Employeed (Y/N)`,
+  Employed_at = `Employed at`,
+  Mental_problem = `Mental Health Issues`
+) %>% select(4, 5, 3, 7:24, -10) %>% mutate(
+  Date = as.Date(df$Date, "%m/%d/%y"),
+  Mental_problem = ifelse(Mental_problem == 'yes', 'Yes', Mental_problem),
+  Mental_problem = replace_na(Mental_problem, 'Unknown'),
+  Cause = replace_na(Cause, 'Unknown'),
+  Target = replace_na(Target, 'Unknown')
+) %>% arrange(desc(Date) ) %>% filter(Date < '2020-12-31')
+# check again
+glimpse(df)
+```
+
+
+# 3. Analysis categorical variables of Target type and Cause
+
+### Target
+
+```{r}
+
+barplot(table(df$Target), las = 2, cex.names = 0.8, cex.axis = 0.8, 
+        col = 'black', main = 'Mass shooting cases count by target types',
+        ylab = 'Count')
+```
+
+Most mass shooting cases are random targets
+
+### Causes
+
+```{r}
+
+barplot(table(df$Cause), las = 2, cex.names = 0.8, cex.axis = 0.8, 
+        col = 'lightblue', main = 'Mass shooting cases count by causes',
+        ylab = 'Count')
+
+```
+
+We can see psycho causes the most mass shooting cases.
+
+### Analysis numeric variable of Fatality
+
+```{r}
+ggplot(df) + geom_histogram(aes(x = Fatalities, y = ..density..), bins = 10,
+color="darkblue", fill="lightblue") + labs(title = 'Fatalities distribution')
+```
+
+Most mass shooting cases have fatalities in the range of 2 to 10.
+
+# 4. Check if total victim number and fatalities are related to cause or suspect mental problem
+
+```{r}
+
+# first to check correlation between deaths and victims, they should strongly positive associated
+
+cor(df$Total_vicitimes, df$Fatalities)
+
+df %>% group_by(Mental_problem) %>% summarise(
+  death = mean(Fatalities),
+  victim = mean(Total_vicitimes)
+) %>% arrange( desc(death, victim))
+
+ggplot(df) + geom_histogram(aes(Fatalities, y = ..density.., 
+                                fill = Mental_problem))
+
+
+df %>% group_by(Cause) %>% summarise(
+  death = mean(Fatalities),
+  victim = mean(Total_vicitimes)
+) %>% arrange( desc(death, victim))
+```
+
+1. We can see criminals with mention conditions committed the majority of mass shooting cases with big numbers of victims and deaths. Thus, we could say that taking care of people who have mention issues could reduce the damage of mass shooting cases. 
+
+2. Robbery is the most dangerous reason for shooting cases. In general robbery cases, criminals primarily wanted money but the situations always escalated to gun violence. 
+
+
+
+# 5. See the distribution of total victims
+
+```{r}
+plot(prop.table(table(df$Total_vicitimes)), type = 'h', 
+     ylab = 'probability', xlab = 'total victims', main = 'PDF of total victims')
+
+# remove the outlier 585 and plot the pdf again
+
+victim2 = subset(df$Total_vicitimes, df$Total_vicitimes != max(df$Total_vicitimes))
+plot(prop.table(table(victim2)), type = 'h', 
+     ylab = 'probability', xlab = 'total victims', main = 'PDF of total victims')
+```
+
+Total victims are right skewed, a outlier of 585 pulled the distribution to the right side. After removing the outlier, the plot is still right skewed. It means a few mass shooting cases have more than 50 victims. Those cases are a larger-scale compared to other cases.
+
+
+# 6. Sampling 
+
+### simple random sampling
+
+```{r}
+
+victim = df$Total_vicitimes
+N = nrow(df)
+sample_size = 50
+n_samples = 30
+xbar = numeric(n_samples)
+for (i in 1:n_samples) {
+  p = sample(victim, sample_size)
+  xbar[i] = mean(p)
+}
+xbar
+mean(xbar)
+mean(victim)
+```
+
+We can see the mean of total victims of random samples is close to the mean of population. So, Central limit theory is applicable to total victimes.
+
+
+### bootstrapping 
+
+```{r}
+
+# total number of samples from the population with replacement
+bootstrapping = sample(victim, N, replace = T)
+par(mfrow = c(1, 2))
+plot(prop.table(table(bootstrapping)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims numbers 
+     by sampling with replacement',
+     ylab = 'probability', xlab = 'victims', xlim = c(0, 100))
+plot(prop.table(table(df$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims numbers',
+     ylab = 'probability', xlab = 'victims', xlim = c(0, 100))
+```
+
+### systematic sampling with step size 20
+
+```{r}
+
+par(mfrow = c(1, 2))
+k = ceiling(N / 20)
+sys_samples = df[seq(from = sample(k, 1), by = k, to= N), ]
+plot(prop.table(table(sys_samples$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims numbers by 
+     systematic sampling',
+     ylab = 'probability', xlab = 'victims ')
+
+plot(prop.table(table(df$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims numbers',
+     ylab = 'probability', xlab = 'victims', xlim = c(0, 100))
+
+par(mfrow = c(1, 1))
+```
+
+### inclusion probability
+
+```{r}
+
+pik <- inclusionprobabilities(df$Fatalities, 100)
+sp <- UPsystematic(pik)
+in_samples = df[sp != 0, ]
+par(mfrow = c(1, 2))
+plot(prop.table(table(in_samples$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims  numbers 
+     by inclusion probability',
+     ylab = 'probability', xlab = 'victims', ylim = c(0, 0.3), 
+     xlim = c(0, 100))
+
+plot(prop.table(table(df$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims  numbers',
+     ylab = 'probability', xlab = 'victims ',
+     ylim = c(0, 0.3), xlim = c(0, 100))
+par(mfrow = c(1, 1))
+```
+
+
+### stratified sampling
+
+```{r}
+
+df_stra <- df[, c('Mental_problem', 'Total_vicitimes')]
+freq <- table(df_stra$Mental_problem)
+st_size = 100 * freq / sum(freq)
+stra_reg <- strata(df_stra, stratanames = 'Mental_problem', size = st_size, method = 'srswor')
+stra_simples = getdata(df_stra, stra_reg)$Total_vicitimes
+par(mfrow = c(1, 2))
+plot(prop.table(table(stra_simples)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims numbers 
+     by stratified sampling',
+     ylab = 'probability', xlab = 'victims', ylim = c(0, 0.3), 
+     xlim = c(0, 100))
+
+plot(prop.table(table(df$Total_vicitimes)), type = 'l', 
+     col = 'darkgreen', main = 'PDF of victims  numbers',
+     ylab = 'probability', xlab = 'victims ',
+     ylim = c(0, 0.3), xlim = c(0, 100))
+par(mfrow = c(1, 1))
+```
+
+Simple sampling and stratified sampling with mental problem have similar distributions with population. In addition, stratified sampling are limited by label columns which is used to sample victims. 
+
+
+# 7. Conclusion
+
+From this US mass shooting dataset, I explored the relationships between different variables. The result shows US mass shooting cases are caused by multiple social problems, such as psychopath, poverty and alcoholic.The majority of cases are not terrorism attacks. So, if the gun control could be tight, mass shooting cases could be reduced significantly. The other two measure could be improve mental health care and reduce poverty. 
+
+
+# 8. What I learned
+
+1. Real world data are not as clean and neat as what we used in class. Cleaning data could be a big work.
+
+2. Bootstrapping could mostly preserve sample distribution when the population is not available. If we want to do classifications, stratified sampling is better because labels are not always balanced. Dealing with imbalanced dataset could be a trick work. The most population approaches are applying different sampling technics(oversampling and undersampling) or using imbalanced mathematical formulas.     
+
+3. Visualization interprets results derived from dataset, to make results being understood by people. 
+
+
+
+
+
