@@ -1,2 +1,2 @@
 # frank_code
-Some of my works for showing
+Some of work for showing
